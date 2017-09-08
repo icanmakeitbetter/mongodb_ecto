@@ -14,6 +14,7 @@ alias Ecto.Integration.TestRepo
 Application.put_env(:ecto, TestRepo,
                     adapter: Mongo.Ecto,
                     url: "ecto://localhost:27017/ecto_test",
+                    pool: DBConnection.Connection,
                     pool_size: 1)
 
 defmodule Ecto.Integration.TestRepo do
@@ -44,5 +45,9 @@ _   = Ecto.Storage.down(TestRepo)
 
 # We capture_io, because of warnings on references
 ExUnit.CaptureIO.capture_io fn ->
-  :ok = Ecto.Migrator.up(TestRepo, 0, Ecto.Integration.Migration, log: false)
+  case Ecto.Migrator.up(TestRepo, 0, Ecto.Integration.Migration, log: false) do
+    :ok         -> :ok
+    :already_up -> :ok
+    _           -> raise "Migration error"
+  end
 end

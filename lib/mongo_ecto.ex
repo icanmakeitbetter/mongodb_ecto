@@ -370,18 +370,8 @@ defmodule Mongo.Ecto do
   @doc false
   defmacro __before_compile__(env) do
     module = env.module
-    config = Module.get_attribute(module, :config)
-    adapter = Keyword.get(config, :pool, Mongo.Pool.Poolboy)
 
     quote do
-      defmodule Pool do
-        use Mongo.Pool, name: __MODULE__, adapter: unquote(adapter)
-
-        def log(return, queue_time, query_time, fun, args) do
-          Mongo.Ecto.log(unquote(module), return, queue_time, query_time, fun, args)
-        end
-      end
-
       def __mongo_pool__, do: unquote(module).Pool
     end
   end
@@ -390,7 +380,9 @@ defmodule Mongo.Ecto do
   def start_link(repo, opts) do
     {:ok, _} = Application.ensure_all_started(:mongodb_ecto)
 
-    repo.__mongo_pool__.start_link(opts)
+    opts
+    |> Keyword.put(:name, repo.__mongo_pool__())
+    |> Mongo.start_link
   end
 
   @doc false
@@ -418,16 +410,32 @@ defmodule Mongo.Ecto do
     do: {:ok, value}
   def load(:map, keyword),
     do: {:ok, Enum.into(keyword, %{})}
-  def load(Ecto.Date, %BSON.DateTime{} = datetime) do
-    {date, _time} = BSON.DateTime.to_datetime(datetime)
-    Ecto.Date.load(date)
+  def load(Ecto.Date, %DateTime{} = datetime) do
+    Ecto.Date.load({datetime.year, datetime.month, datetime.day})
   end
-  def load(Ecto.Time, %BSON.DateTime{} = datetime) do
-    {_date, time} = BSON.DateTime.to_datetime(datetime)
-    Ecto.Time.load(time)
+  def load(Ecto.Time, %DateTime{} = datetime) do
+    Ecto.Time.load(
+      {
+        datetime.hour,
+        datetime.minute,
+        datetime.second,
+        elem(datetime.microsecond, 0)
+      }
+    )
   end
-  def load(Ecto.DateTime, %BSON.DateTime{} = datetime),
-    do: datetime |> BSON.DateTime.to_datetime |> Ecto.DateTime.load
+  def load(Ecto.DateTime, %DateTime{} = datetime) do
+    Ecto.DateTime.load(
+      {
+        {datetime.year, datetime.month, datetime.day},
+        {
+          datetime.hour,
+          datetime.minute,
+          datetime.second,
+          elem(datetime.microsecond, 0)
+        }
+      }
+    )
+  end
   def load(type, data),
     do: Ecto.Type.load(type, data, &load/2)
 
@@ -460,9 +468,11 @@ defmodule Mongo.Ecto do
   defp from_datetime({_, _, _, _} = time),
     do: from_datetime({{1970, 1, 1}, time})
   defp from_datetime({date, {hour, min, sec, usec}}) do
-    greg_secs = :calendar.datetime_to_gregorian_seconds({date, {hour, min, sec}})
-    epoch_secs = greg_secs - @epoch
-    {:ok, %BSON.DateTime{utc: epoch_secs * 1000 + div(usec, 1000)}}
+    datetime =
+      {date, {hour, min, sec}}
+      |> NaiveDateTime.from_erl!
+      |> DateTime.from_naive!("Etc/UTC")
+    {:ok, datetime}
   end
   defp from_datetime(_),
     do: :error
