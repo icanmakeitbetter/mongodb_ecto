@@ -156,7 +156,7 @@ defmodule Mongo.Ecto.Connection do
 
   defp normalize_opts(opts) do
     if Keyword.get(opts, :log) == false do
-      Keyword.replace(opts, :log, nil)
+      Keyword.put(opts, :log, nil)
     else
       opts
     end
