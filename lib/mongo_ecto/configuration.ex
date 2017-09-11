@@ -1,17 +1,17 @@
 defmodule Mongo.Ecto.Configuration do
   defstruct ~w[mongo pool]a
 
-  def start_link(mongo_starter, options) do
+  def start_link(name, mongo_starter, options) do
     Agent.start_link(fn ->
       %__MODULE__{
         mongo: mongo_starter.(),
         pool:  Keyword.get(options, :pool)
       }
-    end, name: __MODULE__)
+    end, name: name)
   end
 
-  def add_common_options(options) when is_list(options) do
-    case Agent.get(__MODULE__, fn configuration -> configuration.pool end) do
+  def add_common_options(name, options) when is_list(options) do
+    case Agent.get(name, fn configuration -> configuration.pool end) do
       nil ->
         options
       pool ->

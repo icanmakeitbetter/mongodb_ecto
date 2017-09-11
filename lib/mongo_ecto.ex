@@ -373,6 +373,7 @@ defmodule Mongo.Ecto do
     module = env.module
 
     quote do
+      def __configuration__, do: unquote(module).Configuration
       def __mongo_pool__, do: unquote(module).Pool
     end
   end
@@ -381,7 +382,7 @@ defmodule Mongo.Ecto do
   def start_link(repo, opts) do
     {:ok, _} = Application.ensure_all_started(:mongodb_ecto)
 
-    Configuration.start_link(fn ->
+    Configuration.start_link(repo.__configuration__, fn ->
       opts
       |> Keyword.put(:name, repo.__mongo_pool__())
       |> Mongo.start_link
@@ -495,11 +496,11 @@ defmodule Mongo.Ecto do
     case apply(NormalizedQuery, function, [query, params]) do
       %{__struct__: read} = query when read in @read_queries ->
         {rows, count} =
-          Connection.read(repo.__mongo_pool__, query, opts)
+          Connection.read(repo, query, opts)
           |> Enum.map_reduce(0, &{process_document(&1, query, preprocess), &2 + 1})
         {count, rows}
       %WriteQuery{} = write ->
-        result = apply(Connection, function, [repo.__mongo_pool__, write, opts])
+        result = apply(Connection, function, [repo, write, opts])
         {result, nil}
     end
   end
@@ -520,7 +521,7 @@ defmodule Mongo.Ecto do
   def insert(repo, meta, params, nil, [], opts) do
     normalized = NormalizedQuery.insert(meta, params, nil)
 
-    case Connection.insert(repo.__mongo_pool__, normalized, opts) do
+    case Connection.insert(repo, normalized, opts) do
       {:ok, _} ->
         {:ok, []}
       other ->
@@ -531,7 +532,7 @@ defmodule Mongo.Ecto do
   def insert(repo, meta, params, {pk, :binary_id, nil}, [], opts) do
     normalized = NormalizedQuery.insert(meta, params, pk)
 
-    case Connection.insert(repo.__mongo_pool__, normalized, opts) do
+    case Connection.insert(repo, normalized, opts) do
       {:ok, %{inserted_id: objid}} ->
         {:ok, [{pk, objid}]}
       other ->
@@ -542,7 +543,7 @@ defmodule Mongo.Ecto do
   def insert(repo, meta, params, {pk, :binary_id, _value}, [], opts) do
     normalized = NormalizedQuery.insert(meta, params, pk)
 
-    case Connection.insert(repo.__mongo_pool__, normalized, opts) do
+    case Connection.insert(repo, normalized, opts) do
       {:ok, _} ->
         {:ok, []}
       other ->
@@ -566,13 +567,13 @@ defmodule Mongo.Ecto do
   def update(repo, meta, fields, filter, {pk, :binary_id, _value}, [], opts) do
     normalized = NormalizedQuery.update(meta, fields, filter, pk)
 
-    Connection.update(repo.__mongo_pool__, normalized, opts)
+    Connection.update(repo, normalized, opts)
   end
 
   def update(repo, meta, fields, filter, nil, [], opts) do
     normalized = NormalizedQuery.update(meta, fields, filter, nil)
 
-    Connection.update(repo.__mongo_pool__, normalized, opts)
+    Connection.update(repo, normalized, opts)
   end
 
   @doc false
@@ -585,13 +586,13 @@ defmodule Mongo.Ecto do
   def delete(repo, meta, filter, {pk, :binary_id, _value}, opts) do
     normalized = NormalizedQuery.delete(meta, filter, pk)
 
-    Connection.delete(repo.__mongo_pool__, normalized, opts)
+    Connection.delete(repo, normalized, opts)
   end
 
   def delete(repo, meta, fields, filter, nil, [], opts) do
     normalized = NormalizedQuery.update(meta, fields, filter, nil)
 
-    Connection.update(repo.__mongo_pool__, normalized, opts)
+    Connection.update(repo, normalized, opts)
   end
 
   defp process_document(document, %{fields: fields, pk: pk}, preprocess) do
@@ -665,7 +666,7 @@ defmodule Mongo.Ecto do
 
     query = %WriteQuery{coll: "system.indexes", command: index}
 
-    {:ok, _} = Connection.insert(repo.__mongo_pool__, query, opts)
+    {:ok, _} = Connection.insert(repo, query, opts)
     :ok
   end
 
@@ -690,7 +691,7 @@ defmodule Mongo.Ecto do
                         command: ["$rename": [{to_string(old), to_string(new)}]],
                         opts: [multi: true]}
 
-    {:ok, _} = Connection.update(repo.__mongo_pool__, query, opts)
+    {:ok, _} = Connection.update(repo, query, opts)
     :ok
   end
 
@@ -763,7 +764,7 @@ defmodule Mongo.Ecto do
   def command(repo, command, opts \\ []) do
     normalized = NormalizedQuery.command(command, opts)
 
-    Connection.command(repo.__mongo_pool__, normalized, opts)
+    Connection.command(repo, normalized, opts)
   end
 
   special_regex = %BSON.Regex{pattern: "\\.system|\\$", options: ""}
@@ -793,7 +794,7 @@ defmodule Mongo.Ecto do
     query = %ReadQuery{coll: "system.namespaces", query: @list_collections_query}
     opts = Keyword.put(opts, :log, false)
 
-    Connection.read(repo.__mongo_pool__, query, opts)
+    Connection.read(repo, query, opts)
     |> Enum.map(&Map.fetch!(&1, "name"))
     |> Enum.map(fn collection ->
       collection |> String.split(".", parts: 2) |> Enum.at(1)
@@ -802,7 +803,7 @@ defmodule Mongo.Ecto do
 
   defp truncate_collection(repo, collection, opts) do
     query = %WriteQuery{coll: collection, query: %{}}
-    Connection.delete_all(repo.__mongo_pool__, query, opts)
+    Connection.delete_all(repo, query, opts)
   end
 
   defp namespace(repo, coll) do

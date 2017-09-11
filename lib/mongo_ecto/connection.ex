@@ -13,59 +13,60 @@ defmodule Mongo.Ecto.Connection do
   def storage_down(opts) do
     opts = Keyword.put(opts, :size, 1)
 
-    {:ok, conn} = Mongo.start_link(database: "test")
+    {:ok, pool} = Mongo.start_link(database: "test")
 
-    Mongo.command(conn, dropDatabase: 1)
+    Mongo.command(pool, dropDatabase: 1)
     :ok
   end
 
   ## Callbacks for adapter
 
-  def read(conn, query, opts \\ [])
+  def read(repo, query, opts \\ [])
 
-  def read(conn, %ReadQuery{} = query, opts) do
+  def read(repo, %ReadQuery{} = query, opts) do
     opts  = normalize_opts(
+      repo.__configuration__,
       [projection: query.projection, sort: query.order] ++ query.opts ++ opts
     )
     coll  = query.coll
     query = query.query
 
-    Mongo.find(conn, coll, query, opts)
+    Mongo.find(repo.__mongo_pool__, coll, query, opts)
   end
 
-  def read(conn, %CountQuery{} = query, opts) do
+  def read(repo, %CountQuery{} = query, opts) do
     coll  = query.coll
-    opts  = normalize_opts(query.opts ++ opts)
+    opts  = normalize_opts(repo.__configuration__, query.opts ++ opts)
     query = query.query
 
-    [%{"value" => Mongo.count!(conn, coll, query, opts)}]
+    [%{"value" => Mongo.count!(repo.__mongo_pool__, coll, query, opts)}]
   end
 
-  def read(conn, %AggregateQuery{} = query, opts) do
+  def read(repo, %AggregateQuery{} = query, opts) do
     coll     = query.coll
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
     pipeline = query.pipeline
 
-    Mongo.aggregate(conn, coll, pipeline, opts)
+    Mongo.aggregate(repo.__mongo_pool__, coll, pipeline, opts)
   end
 
-  def delete_all(conn, %WriteQuery{} = query, opts) do
+  def delete_all(repo, %WriteQuery{} = query, opts) do
     coll     = query.coll
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
     query    = query.query
 
-    case Mongo.delete_many(conn, coll, query, opts) do
+    case Mongo.delete_many(repo.__mongo_pool__, coll, query, opts) do
       {:ok, %{deleted_count: n}} -> n
     end
   end
 
-  def delete(conn, %WriteQuery{} = query, opts) do
+  def delete(repo, %WriteQuery{} = query, opts) do
     coll     = query.coll
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
     query    = query.query
 
     catch_constraint_errors fn ->
-      case Mongo.delete_one(conn, coll, query, opts) do
+      case Mongo.delete_one(repo.__mongo_pool__, coll, query, opts) do
         {:ok, %{deleted_count: 1}} ->
           {:ok, []}
         {:ok, _} ->
@@ -74,25 +75,25 @@ defmodule Mongo.Ecto.Connection do
     end
   end
 
-  def update_all(conn, %WriteQuery{} = query, opts) do
+  def update_all(repo, %WriteQuery{} = query, opts) do
     coll     = query.coll
     command  = query.command
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
     query    = query.query
 
-    case Mongo.update_many(conn, coll, query, command, opts) do
+    case Mongo.update_many(repo.__mongo_pool__, coll, query, command, opts) do
       {:ok, %{modified_count: n}} -> n
     end
   end
 
-  def update(conn, %WriteQuery{} = query, opts) do
+  def update(repo, %WriteQuery{} = query, opts) do
     coll     = query.coll
     command  = query.command
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
     query    = query.query
 
     catch_constraint_errors fn ->
-      case Mongo.update_one(conn, coll, query, command, opts) do
+      case Mongo.update_one(repo.__mongo_pool__, coll, query, command, opts) do
         {:ok, %{modified_count: 1}} ->
           {:ok, []}
         {:ok, _} ->
@@ -101,21 +102,21 @@ defmodule Mongo.Ecto.Connection do
     end
   end
 
-  def insert(conn, %WriteQuery{} = query, opts) do
+  def insert(repo, %WriteQuery{} = query, opts) do
     coll     = query.coll
     command  = query.command
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
 
     catch_constraint_errors fn ->
-      Mongo.insert_one(conn, coll, command, opts)
+      Mongo.insert_one(repo.__mongo_pool__, coll, command, opts)
     end
   end
 
-  def command(conn, %CommandQuery{} = query, opts) do
+  def command(repo, %CommandQuery{} = query, opts) do
     command  = query.command
-    opts     = normalize_opts(query.opts ++ opts)
+    opts     = normalize_opts(repo.__configuration__, query.opts ++ opts)
 
-    with {:ok, document} <- Mongo.command(conn, command, opts) do
+    with {:ok, document} <- Mongo.command(repo.__mongo_pool__, command, opts) do
       document
     end
   end
@@ -155,8 +156,8 @@ defmodule Mongo.Ecto.Connection do
     end
   end
 
-  defp normalize_opts(opts) do
-    opts = Configuration.add_common_options(opts)
+  defp normalize_opts(configuration, opts) do
+    opts = Configuration.add_common_options(configuration, opts)
     if Keyword.get(opts, :log) == false do
       Keyword.put(opts, :log, nil)
     else
