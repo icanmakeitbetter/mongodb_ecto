@@ -364,6 +364,7 @@ defmodule Mongo.Ecto do
   alias Mongo.Ecto.ObjectID
   alias Mongo.Ecto.Connection
   alias Mongo.Ecto.Conversions
+  alias Mongo.Ecto.Configuration
 
   ## Adapter
 
@@ -380,9 +381,11 @@ defmodule Mongo.Ecto do
   def start_link(repo, opts) do
     {:ok, _} = Application.ensure_all_started(:mongodb_ecto)
 
-    opts
-    |> Keyword.put(:name, repo.__mongo_pool__())
-    |> Mongo.start_link
+    Configuration.start_link(fn ->
+      opts
+      |> Keyword.put(:name, repo.__mongo_pool__())
+      |> Mongo.start_link
+    end, opts)
   end
 
   @doc false

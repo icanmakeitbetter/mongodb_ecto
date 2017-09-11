@@ -6,6 +6,7 @@ defmodule Mongo.Ecto.Connection do
   alias Mongo.Ecto.NormalizedQuery.CommandQuery
   alias Mongo.Ecto.NormalizedQuery.CountQuery
   alias Mongo.Ecto.NormalizedQuery.AggregateQuery
+  alias Mongo.Ecto.Configuration
 
   ## Worker
 
@@ -155,6 +156,7 @@ defmodule Mongo.Ecto.Connection do
   end
 
   defp normalize_opts(opts) do
+    opts = Configuration.add_common_options(opts)
     if Keyword.get(opts, :log) == false do
       Keyword.put(opts, :log, nil)
     else
