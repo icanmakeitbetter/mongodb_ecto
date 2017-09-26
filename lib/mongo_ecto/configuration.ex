@@ -1,5 +1,5 @@
 defmodule Mongo.Ecto.Configuration do
-  defstruct ~w[mongo pool]a
+  defstruct ~w[mongo pool timeout]a
 
   def start_link(name, mongo_starter, options) do
     Agent.start_link(fn ->
@@ -11,11 +11,18 @@ defmodule Mongo.Ecto.Configuration do
   end
 
   def add_common_options(name, options) when is_list(options) do
-    case Agent.get(name, fn configuration -> configuration.pool end) do
+    options
+    |> add_common_option(name, :pool,    fn config -> config.pool end)
+    |> add_common_option(name, :timeout, fn config -> config.timeout end)
+  end
+
+  defp add_common_option(options, name, option_name, option_fetcher) do
+    Agent.get(name, option_fetcher)
+    |> case do
       nil ->
         options
-      pool ->
-        Keyword.put_new(options, :pool, pool)
+      option ->
+        Keyword.put_new(options, option_name, option)
     end
   end
 end
